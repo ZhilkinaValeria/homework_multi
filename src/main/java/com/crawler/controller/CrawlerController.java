@@ -1,105 +1,53 @@
 package com.crawler.controller;
 
-import com.crawler.model.ContactData;
-import com.crawler.service.ContactCrawlerService;
+import com.crawler.service.CrawlerService;
+import com.crawler.service.SchedulerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
+import java.util.Set;
 
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/crawler")
 public class CrawlerController {
 
     @Autowired
-    private ContactCrawlerService crawlerService;
+    private CrawlerService crawlerService;
 
-    @PostMapping("/crawl/basic")
-    public ResponseEntity<Map<String, Object>> startBasicCrawling(@RequestBody List<String> urls) {
-        crawlerService.startBasicCrawling(urls);
+    @Autowired
+    private SchedulerService schedulerService;
 
-        return ResponseEntity.ok(Map.of(
-                "status", "started",
-                "type", "basic",
-                "message", "Запущен базовый краулер с " + urls.size() + " URL",
-                "threads", "simple Thread/Runnable"
-        ));
-    }
-
-    @PostMapping("/crawl/advanced")
-    public ResponseEntity<Map<String, Object>> startAdvancedCrawling(@RequestBody Map<String, Object> request) {
+    @PostMapping("/start")
+    public ResponseEntity<Map<String, String>> startCrawling(@RequestBody Map<String, Object> request) {
         @SuppressWarnings("unchecked")
-        List<String> urls = (List<String>) request.get("urls");
-        Integer depth = (Integer) request.getOrDefault("depth", 1);
+        Set<String> urls = (Set<String>) request.get("urls");
+        int maxDepth = (int) request.getOrDefault("maxDepth", 2);
+        int maxPages = (int) request.getOrDefault("maxPages", 100);
 
-        CompletableFuture<Map<String, Object>> future =
-                crawlerService.startAdvancedCrawling(urls, depth);
+        crawlerService.startCrawling(urls, maxDepth, maxPages);
 
         return ResponseEntity.ok(Map.of(
                 "status", "started",
-                "type", "advanced",
-                "message", "Запущен продвинутый краулер с глубиной " + depth,
-                "urlsCount", urls.size(),
-                "executor", "ExecutorService with CompletableFuture"
+                "urls", String.valueOf(urls.size()),
+                "maxDepth", String.valueOf(maxDepth),
+                "maxPages", String.valueOf(maxPages)
         ));
     }
 
-    @GetMapping("/answer")
-    public ResponseEntity<Map<String, Object>> getResults(
-            @RequestParam(required = false) String search,
-            @RequestParam(required = false, defaultValue = "date") String sort,
-            @RequestParam(required = false, defaultValue = "0") int page,
-            @RequestParam(required = false, defaultValue = "20") int size) {
-
-        List<ContactData> results = crawlerService.searchContacts(search, sort);
-
-        // Пагинация
-        int total = results.size();
-        int fromIndex = Math.min(page * size, total);
-        int toIndex = Math.min((page + 1) * size, total);
-
-        List<ContactData> pageResults = results.subList(fromIndex, toIndex);
-
-        return ResponseEntity.ok(Map.of(
-                "data", pageResults,
-                "pagination", Map.of(
-                        "page", page,
-                        "size", size,
-                        "total", total,
-                        "pages", (int) Math.ceil((double) total / size)
-                ),
-                "filters", Map.of(
-                        "search", search != null ? search : "",
-                        "sort", sort
-                )
-        ));
+    @PostMapping("/add-url")
+    public ResponseEntity<Map<String, String>> addStartUrl(@RequestParam String url) {
+        schedulerService.addStartUrl(url);
+        return ResponseEntity.ok(Map.of("status", "added", "url", url));
     }
 
-    @GetMapping("/stats")
-    public ResponseEntity<Map<String, Object>> getStats() {
-        return ResponseEntity.ok(crawlerService.getStats());
-    }
-
-    @PostMapping("/save")
-    public ResponseEntity<Map<String, Object>> saveData() {
-        crawlerService.saveToFile();
+    @GetMapping("/status")
+    public ResponseEntity<Map<String, Object>> getStatus() {
         return ResponseEntity.ok(Map.of(
-                "status", "success",
-                "message", "Данные сохранены в файл"
-        ));
-    }
-
-    @GetMapping("/health")
-    public ResponseEntity<Map<String, Object>> health() {
-        Map<String, Object> stats = crawlerService.getStats();
-        return ResponseEntity.ok(Map.of(
-                "status", "running",
-                "service", "Multithreading Crawler",
-                "timestamp", System.currentTimeMillis(),
-                "stats", stats
+                "startUrls", schedulerService.getStartUrls().size(),
+                "visitedUrls", crawlerService.getVisitedUrls().size(),
+                "activeTasks", crawlerService.getActiveTasks()
         ));
     }
 }
